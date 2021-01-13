@@ -1,0 +1,420 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class PlayerController : MonoBehaviour
+{
+    public float moveDirectionX;
+    public float moveSpeedX;
+    public float dashSpeedX;
+    public float jumpForce;
+    public float fallMultiplier;
+    public float riseMultiplier;
+    public float lowJumpMultiplier;
+    public float dashSpeed;
+    private float dashTime;
+    public float startDashTime;
+    public float dashCooldownTime;
+    private float nextFireTime = 0;
+    private float touchingLeftOrRightWall;
+    public float wallSlideSpeed;
+
+    public bool canMove;
+    public bool canJump;
+    public bool canDash;
+    public bool dash;
+    public bool wallJump;
+    public bool isWallSliding;
+    public bool isTouchingLeftWall;
+    public bool isTouchingRightWall;
+    public bool isTouchingSemiSolid;
+    public bool isGrounded;
+    public bool isDoubleJumping;
+    public bool Sprite1Active;
+    public bool facingRight;
+
+    private int extraJumps;
+    public int extraJumpsValue;
+
+    public Rigidbody2D rb;
+    public Animator anim;
+    public LayerMask whatIsGround;
+
+    private void Start()
+    {
+        canMove = true;
+
+        canJump = true;
+
+        canDash = true;
+
+        Sprite1Active = true;
+
+        facingRight = true;
+
+        extraJumps = extraJumpsValue;
+
+        dashTime = startDashTime;
+
+        rb = GetComponent<Rigidbody2D>();
+    }
+    void Update()
+    {
+        DoubleJump();
+
+        Dash();
+
+        CheckDirection();
+
+        CheckIfWallJumped();
+
+        CheckIfTouchingWall();
+
+        CheckIfWallSliding();
+
+    }
+    void FixedUpdate()
+    {
+        Move();
+
+        WallJump();
+
+        BetterJump();
+
+        WallSlideFriction();
+
+        CheckIfGrounded();
+    }
+    //allows horizontal movement
+    void Move()
+    {
+        if (canMove == true)
+        {
+            moveDirectionX = Input.GetAxis("Horizontal");
+            rb.velocity = new Vector2(moveDirectionX * moveSpeedX, rb.velocity.y);
+        }
+        if ( isGrounded == true && moveDirectionX > 0 | moveDirectionX < 0)
+        {
+            FindObjectOfType<AudioManager>().Play("Walk");
+        }
+        if (dash == true && facingRight)
+        {
+            moveDirectionX = Input.GetAxis("Fire1r");
+            rb.velocity = new Vector2(moveDirectionX * dashSpeedX, rb.velocity.y);
+        }
+        else if (dash == true && !facingRight)
+        {
+            moveDirectionX = Input.GetAxis("Fire1l");
+            rb.velocity = new Vector2(moveDirectionX * dashSpeedX, rb.velocity.y);
+        }
+    }
+    //flips sprite based on direction
+    void Flip()
+    {
+        if (isWallSliding == false)
+        {
+            facingRight = !facingRight;
+            Vector3 Scaler = transform.localScale;
+            Scaler.x *= -1;
+            transform.localScale = Scaler;
+        }
+        else if (isTouchingLeftWall == true)
+        {
+            facingRight = !facingRight;
+            Vector3 Scaler = transform.localScale;
+            Scaler.x = 1;
+            transform.localScale = Scaler;
+        }
+        else if (isTouchingRightWall == true)
+        {
+            facingRight = !facingRight;
+            Vector3 Scaler = transform.localScale;
+            Scaler.x *= -1;
+            transform.localScale = Scaler;
+        }
+    }
+    //checks if wallsliding
+    void CheckIfWallSliding()
+    {
+        if (isTouchingLeftWall | isTouchingRightWall && !isGrounded && rb.velocity.y < 0)
+        {
+            isWallSliding = true;
+        }
+        else
+        {
+            isWallSliding = false;
+        }
+    }
+    //double jump
+    void DoubleJump()
+    {
+        if (isGrounded == true)
+        {
+            extraJumps = extraJumpsValue;
+        }
+        if (Sprite1Active == true)
+        {
+            extraJumps = 0;
+        }
+        if (canJump == true)
+        {
+            if (Input.GetButtonDown("Jump") && extraJumps > 0)
+            {
+                rb.velocity = Vector2.up * jumpForce;
+                anim.SetBool("IsJumpingSprite2", true);
+                Invoke("SetJumpToFalse", 0.4f);
+                extraJumps--;
+                canMove = true;
+                FindObjectOfType<AudioManager>().Play("Landing");
+                Debug.Log("Double Jump enabled");
+                if (Input.GetButtonDown("Jump") && !isGrounded && !isWallSliding)
+                {
+                    isDoubleJumping = true;
+                    anim.SetBool("IsDoubleJumping", true);
+                    FindObjectOfType<AudioManager>().Play("Flap");
+                    Invoke("SetDoubleJumpToFalse", 0.4f);
+                    Debug.Log("Double Jump Used");
+                }
+            }
+            else if (Input.GetButtonDown("Jump") && extraJumps == 0 && isGrounded == true)
+            {
+                rb.velocity = Vector2.up * jumpForce;
+                anim.SetBool("IsJumpingSprite1", true);
+                Invoke("SetJumpToFalse", 0.4f);
+                Debug.Log("Double Jump disabled");
+                FindObjectOfType<AudioManager>().Play("Landing");
+            }
+        }
+    }
+    void SetJumpToFalse()
+    {
+        anim.SetBool("IsJumpingSprite1", false);
+        anim.SetBool("IsJumpingSprite2", false);
+    }
+    void SetDoubleJumpToFalse()
+    {
+        isDoubleJumping = false;
+        anim.SetBool("IsDoubleJumping", false);
+    }
+    //allows control over fall, low jump and rise multipliers for better jumping
+    void BetterJump()
+    {
+        if (rb.velocity.y < 0)
+        {
+            rb.velocity += Vector2.up * Physics2D.gravity.y * (fallMultiplier - 1) * Time.deltaTime;
+        }
+        else if (rb.velocity.y > 0 && !Input.GetButton("Jump"))
+        {
+            rb.velocity += Vector2.up * Physics2D.gravity.y * (lowJumpMultiplier - 1) * Time.deltaTime;
+        }
+        else if (rb.velocity.y > 0)
+        {
+            rb.velocity += Vector2.up * Physics2D.gravity.y * (riseMultiplier - 1) * Time.deltaTime;
+        }
+    }
+    //defines wallJump
+    void CheckIfWallJumped()
+    {
+        if (Input.GetButtonDown("Jump") && (isTouchingLeftWall || isTouchingRightWall) && !isGrounded)
+        {
+            wallJump = true;
+            Invoke("SetWallJumpToFalse", 0.08f);
+        }
+    }
+    //reduces velocity when wallsliding
+    void WallSlideFriction()
+    {
+        if (isWallSliding)
+        {
+            if (rb.velocity.y < -wallSlideSpeed)
+            {
+                rb.velocity = new Vector2(rb.velocity.x, -wallSlideSpeed);
+            }
+        }
+    }
+    //defines isGrounded
+    void CheckIfGrounded()
+    {
+        isGrounded = Physics2D.OverlapBox(new Vector2(gameObject.transform.position.x, gameObject.transform.position.y - 0.5f),
+        new Vector2(0.5f, 0.2f), 0f, whatIsGround);
+    }
+    //defines isTouchingWall
+    void CheckIfTouchingWall()
+    {
+        isTouchingLeftWall = Physics2D.OverlapBox(new Vector2(gameObject.transform.position.x - 0.2f, gameObject.transform.position.y),
+        new Vector2(0.5f, 0.2f), 0f, whatIsGround);
+
+        isTouchingRightWall = Physics2D.OverlapBox(new Vector2(gameObject.transform.position.x + 0.2f, gameObject.transform.position.y),
+        new Vector2(0.5f, 0.2f), 0f, whatIsGround);
+
+        if (isTouchingLeftWall)
+        {
+            touchingLeftOrRightWall = 1;
+        }
+        else if (isTouchingRightWall)
+        {
+            touchingLeftOrRightWall = -1;
+        }
+    }
+    //wall jumping
+    void WallJump()
+    {
+        if (wallJump == true)
+        {
+            extraJumps = extraJumpsValue;
+            canMove = false;
+            canJump = true;
+        }
+        else if (isTouchingLeftWall || isTouchingRightWall == true || isWallSliding == true || isGrounded == true)
+        {
+            canMove = true;
+        }
+        if (isGrounded)
+        {
+            canJump = true;
+        }
+        if (wallJump && Sprite1Active == true)
+        {
+            rb.velocity = new Vector2(moveSpeedX * touchingLeftOrRightWall, jumpForce);
+            anim.SetBool("IsJumpingSprite1", true);
+            Invoke("SetWallJumpToFalse", 0.08f);
+        }
+        else if (wallJump && Sprite1Active == false)
+        {
+            rb.velocity = new Vector2(moveSpeedX * touchingLeftOrRightWall, jumpForce);
+            anim.SetBool("IsJumpingSprite2", true);
+            Invoke("SetWallJumpToFalse", 0.08f);
+        }
+    }
+    void SetWallJumpToFalse()
+    {
+        wallJump = false;
+        anim.SetBool("IsJumpingSprite1", false);
+        anim.SetBool("IsJumpingSprite2", false);
+    }
+    //dash
+    void Dash()
+    {
+        if (Time.time > nextFireTime)
+        {
+            if (dashTime <= 0)
+            {
+                dashTime = startDashTime;
+            }
+            else
+            {
+                dashTime -= Time.deltaTime;
+
+                if (Input.GetButtonDown("Fire1r") && facingRight && Sprite1Active == true && canDash == true)
+                {
+                    dash = true;
+                    anim.SetBool("IdleSprite1", false);
+                    anim.SetBool("IdleSprite2", false);
+                    anim.SetBool("IsJumpingSprite1", false);
+                    anim.SetBool("IsJumpingSprite2", false);
+                    anim.SetBool("IsDashing", true);
+                    rb.constraints = RigidbodyConstraints2D.FreezePositionY | RigidbodyConstraints2D.FreezeRotation;
+                    nextFireTime = Time.time + dashCooldownTime;
+                    FindObjectOfType<AudioManager>().Play("Dash");
+                    Invoke("SetDashToFalse", 0.4f);
+                    Debug.Log("Dash ability used, cooldown started");
+                }
+                else if (Input.GetButtonDown("Fire1l") && !facingRight && Sprite1Active == true && canDash == true)
+                {
+                    dash = true;
+                    anim.SetBool("IdleSprite1", false);
+                    anim.SetBool("IdleSprite2", false);
+                    anim.SetBool("IsJumpingSprite1", false);
+                    anim.SetBool("IsJumpingSprite2", false);
+                    anim.SetBool("IsDashing", true);
+                    rb.constraints = RigidbodyConstraints2D.FreezePositionY | RigidbodyConstraints2D.FreezeRotation;
+                    nextFireTime = Time.time + dashCooldownTime;
+                    FindObjectOfType<AudioManager>().Play("Dash");
+                    Invoke("SetDashToFalse", 0.4f);
+                    Debug.Log("Dash ability used, cooldown started");
+                }
+            }
+        }
+    }
+    void SetDashToFalse()
+    {
+        dash = false;
+        rb.constraints = RigidbodyConstraints2D.None;
+        rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+        anim.SetBool("IsDashing", false);
+    }
+    void CheckDirection()
+    {
+        if (facingRight == false && moveDirectionX > 0 && isTouchingLeftWall == false && isTouchingRightWall == false)
+        {
+            Flip();
+            Debug.Log("facing right");
+        }
+        if (facingRight == true && moveDirectionX < 0 && isTouchingLeftWall == false && isTouchingRightWall == false)
+        {
+            Flip();
+            Debug.Log("facing left");
+        }
+        if (isTouchingSemiSolid == true)
+        {
+            Debug.Log("noflip");
+        }
+        if (isTouchingLeftWall == true && facingRight == false && dash == false)
+        {
+            Flip();
+            Debug.Log("leftwallflip");
+        }
+        if (isTouchingRightWall == true && facingRight == true && dash == false)
+        {
+            Flip();
+            Debug.Log("leftrightflip");
+        }
+    }
+    void SetFairyToFalse()
+    {
+        Sprite1Active = true;
+        anim.SetBool("IdleSprite1", true);
+        anim.SetBool("IdleSprite2", false);
+    }
+    private void OnTriggerEnter2D(Collider2D collision)
+    {
+        if (collision.tag == "Fairy")
+        {
+            Sprite1Active = false;
+            anim.SetBool("IdleSprite1", false);
+            anim.SetBool("IdleSprite2", true);
+            Invoke("SetFairyToFalse", 8.0f);
+            Debug.Log("fairy"); 
+        }
+    }
+    private void OnCollisionEnter2D(Collision2D collision)
+    { 
+        if (collision.collider.CompareTag("Death"))
+        {
+            anim.SetBool("IsDead", true);
+            canMove = false;
+            canDash = false;
+            rb.constraints = RigidbodyConstraints2D.FreezePositionY | RigidbodyConstraints2D.FreezePositionX | RigidbodyConstraints2D.FreezeRotation;
+        }
+        if (collision.collider.CompareTag("SemiSolid"))
+        {
+            isTouchingSemiSolid = true;
+            isTouchingLeftWall = false;
+            isTouchingRightWall = false;
+            canMove = true;
+            isGrounded = true;
+            Debug.Log("semisolid");
+        }
+    }
+    private void OnDrawGizmosSelected()
+    {
+        //ground check
+        Gizmos.color = Color.green;
+        Gizmos.DrawCube(new Vector2(gameObject.transform.position.x, gameObject.transform.position.y - 0.49f), new Vector2(0.7f, 0.1f));
+        
+        //wall check
+        Gizmos.color = Color.blue;
+        Gizmos.DrawCube(new Vector2(gameObject.transform.position.x - 0.25f, gameObject.transform.position.y), new Vector2(0.1f, 0.7f));
+        Gizmos.DrawCube(new Vector2(gameObject.transform.position.x + 0.25f, gameObject.transform.position.y), new Vector2(0.1f, 0.7f));
+    }
+}
